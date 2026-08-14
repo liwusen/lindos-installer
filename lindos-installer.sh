@@ -278,10 +278,10 @@ install_mmclinux() {
     warn "缺少 python3，跳过 mmclinux"
     return 0
   fi
-  # 写入启动器（mmclinux 是 tkinter 程序，直接跑 main.py）
+  # 写入启动器（mmclinux 是 tkinter 程序，且用相对路径读 language/ 与 msc/，必须先 cd）
   cat > "${BIN_DIR}/mmclinux" <<EOF
 #!/usr/bin/env bash
-exec python3 "${d}/main.py" "\$@"
+cd "${d}" && exec python3 ./main.py "\$@"
 EOF
   chmod +x "${BIN_DIR}/mmclinux"
   ok "mmclinux -> ${BIN_DIR}/mmclinux（终端输入 mmclinux 启动）"
