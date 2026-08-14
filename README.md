@@ -41,7 +41,7 @@
 sudo ./lindos-installer.sh
 
 # 或者直接管道安装
-curl -sSL https://raw.githubusercontent.com/<你的用户名>/lindos/main/lindos-installer.sh | sudo bash -s -- --all
+curl -sSL https://raw.githubusercontent.com/liwusen/lindos-installer/main/lindos-installer.sh | sudo bash -s -- --all
 ```
 
 ## 📖 用法
