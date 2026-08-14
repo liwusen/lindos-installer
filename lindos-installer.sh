@@ -292,11 +292,57 @@ install_activate_linux() {
     warn "activate-linux 仅提供 apt PPA，跳过"
     return 0
   fi
+  local arch codename
+  arch="$(dpkg --print-architecture 2>/dev/null || echo amd64)"
+  codename="$(. /etc/os-release; echo "${VERSION_CODENAME:-unknown}")"
+
   log "添加 PPA ppa:edd/misc 并安装 activate-linux"
-  DEBIAN_FRONTEND=noninteractive add-apt-repository -y ppa:edd/misc
-  DEBIAN_FRONTEND=noninteractive apt-get update -y
-  DEBIAN_FRONTEND=noninteractive apt-get install -y activate-linux
-  ok "activate-linux 已安装（终端输入 activate-linux 显示水印）"
+  DEBIAN_FRONTEND=noninteractive add-apt-repository -y ppa:edd/misc >/dev/null 2>&1 || true
+  DEBIAN_FRONTEND=noninteractive apt-get update -y >/dev/null 2>&1 || true
+
+  # 方案 1: PPA 预编译包（仅 focal/jammy 等有包；resolute/noble 等没有）
+  if DEBIAN_FRONTEND=noninteractive apt-get install -y activate-linux; then
+    ok "activate-linux 已安装（终端输入 activate-linux 显示水印）"
+    return 0
+  fi
+  warn "PPA 没有 ${codename} (${arch}) 的 activate-linux 预编译包，尝试备用方案"
+
+  # 方案 2: 直接下载 PPA pool 中 jammy 的 .deb（仅 amd64，依赖都是基础库，可装到新版）
+  if [ "$arch" = "amd64" ]; then
+    local deb_url="https://ppa.launchpadcontent.net/edd/misc/ubuntu/pool/main/a/activate-linux/activate-linux_1.0.0-1.2204.2_amd64.deb"
+    log "下载 jammy 版 .deb（适用于较新发行版）……"
+    if wget -q "$deb_url" -O /tmp/activate-linux.deb \
+       && (DEBIAN_FRONTEND=noninteractive dpkg -i /tmp/activate-linux.deb 2>/dev/null \
+           || DEBIAN_FRONTEND=noninteractive apt-get -f install -y); then
+      ok "activate-linux 已通过 .deb 安装（${codename}/${arch}）"
+      return 0
+    fi
+    warn ".deb 安装失败，尝试源码编译"
+  else
+    warn "无 ${arch} 架构预编译包，尝试源码编译"
+  fi
+
+  # 方案 3: 源码编译（原仓库 glogin/activate-linux 已归档，使用完整 fork）
+  log "源码编译 activate-linux（cairo 水印程序，原仓库已归档，使用 MrGlockenspiel fork）"
+  local pkgs=(libconfig-dev libcairo2-dev libpango1.0-dev libxi-dev libx11-dev
+              libxext-dev libxfixes-dev libxinerama-dev libxrandr-dev
+              libwayland-dev wayland-protocols libxt-dev)
+  DEBIAN_FRONTEND=noninteractive apt-get install -y "${pkgs[@]}"
+  local d="${SRC_DIR}/activate-linux"
+  clone_repo "https://github.com/MrGlockenspiel/activate-linux.git" "$d"
+  cd "$d"
+  make -j"$(nproc)"
+  if ! make install; then
+    local bin
+    bin="$(find "$d" -maxdepth 3 -type f -perm -111 -name '*activate*' 2>/dev/null | head -n1)"
+    [ -n "$bin" ] && install -Dm755 "$bin" "${BIN_DIR}/activate-linux"
+  fi
+  if command -v activate-linux >/dev/null 2>&1; then
+    ok "activate-linux 已通过源码编译安装"
+  else
+    warn "activate-linux 编译产物未安装成功，请手动检查 ${d}"
+    return 1
+  fi
 }
 
 install_one() {
@@ -341,6 +387,9 @@ uninstall_one() {
       if is_apt_distro; then
         DEBIAN_FRONTEND=noninteractive apt-get remove -y activate-linux || true
       fi
+      rm -f "${BIN_DIR}/activate-linux"
+      d="${SRC_DIR}/activate-linux"
+      [ -f "${d}/Makefile" ] && ( cd "$d" && make uninstall >/dev/null 2>&1 || true )
       ;;
   esac
   ok "已移除 $name"
